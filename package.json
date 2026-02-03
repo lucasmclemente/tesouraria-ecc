@@ -6,19 +6,12 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "lucide-react": "^0.284.0",
-    "clsx": "^2.0.0",
-    "tailwind-merge": "^1.14.0",
-    "react-scripts": "5.0.1"
+    "react-scripts": "5.0.1",
+    "@google/generative-ai": "^0.1.0"
   },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build"
-  },
-  "devDependencies": {
-    "tailwindcss": "^3.3.0",
-    "typescript": "^4.9.5",
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0"
   },
   "browserslist": {
     "production": [">0.2%", "not dead", "not op_mini all"],
