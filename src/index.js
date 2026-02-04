@@ -53,7 +53,7 @@ const App = () => {
 
     setIsProcessing(true);
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
       const result = await model.generateContent([PROMPT_SISTEMA, inputText]);
       const text = result.response.text().replace(/```json|```/g, "").trim();
       setReport(JSON.parse(text));
