@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { 
   Activity, TrendingUp, TrendingDown, Church, Wallet, Calendar, 
   FileSearch, Paperclip, Plus, Pizza, PartyPopper, Utensils, 
-  Users, Info, X, FileText, Download, FileSpreadsheet 
+  Users, Info, X, FileText, Download, FileSpreadsheet, AlertCircle
 } from 'lucide-react';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { jsPDF } from "jspdf";
@@ -18,9 +18,9 @@ const App = () => {
   const [inputText, setInputText] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [manualInitialBalance, setManualInitialBalance] = useState(0); // Novo Campo
   const [isProcessing, setIsProcessing] = useState(false);
   const [transactions, setTransactions] = useState([]);
-  const [accountBalances, setAccountBalances] = useState({ inicial: 0, final: 0 });
   const [newCategoryName, setNewCategoryName] = useState('');
   const [attachedFiles, setAttachedFiles] = useState([]);
   const fileInputRef = useRef(null);
@@ -34,6 +34,7 @@ const App = () => {
     localStorage.setItem('ecc_categorias', JSON.stringify(categories));
   }, [categories]);
 
+  // --- CÁLCULOS MATEMÁTICOS EXATOS ---
   const totals = transactions.reduce((acc, t) => {
     const val = parseFloat(t.valor) || 0;
     if (t.tipo === 'E') acc.entradas += val; else acc.saidas += val;
@@ -43,12 +44,15 @@ const App = () => {
     return acc;
   }, { entradas: 0, saidas: 0, porProjeto: {} });
 
-  // --- FUNÇÕES DE EXPORTAÇÃO ---
+  const calculatedFinalBalance = parseFloat(manualInitialBalance) + totals.entradas - totals.saidas;
+
+  // --- EXPORTAÇÃO ---
   const exportPDF = () => {
     const doc = new jsPDF();
     doc.text("Tesouraria ECC - Paroquia N. Sra. das Dores", 14, 20);
     doc.setFontSize(10);
     doc.text(`Periodo: ${startDate} a ${endDate}`, 14, 28);
+    doc.text(`Saldo Inicial: R$ ${parseFloat(manualInitialBalance).toFixed(2)} | Saldo Final: R$ ${calculatedFinalBalance.toFixed(2)}`, 14, 34);
     const tableData = transactions.map(t => [t.data, t.proj, t.item, t.cat, t.tipo === 'E' ? t.valor.toFixed(2) : `-${t.valor.toFixed(2)}`]);
     doc.autoTable({ startY: 40, head: [['Data', 'Projeto', 'Item', 'Categoria', 'Valor (R$)']], body: tableData, theme: 'grid' });
     doc.save(`Relatorio_ECC_${startDate}.pdf`);
@@ -74,57 +78,50 @@ const App = () => {
 
   const handleAnalyze = async () => {
     if (!inputText.trim() || !startDate || !endDate) return alert("Preencha as datas e anexe os extratos.");
-    if (!API_KEY) return alert("Chave API não configurada.");
-    
     setIsProcessing(true);
-    const prompt = `Analise os extratos de ${startDate} a ${endDate}. Extraia Saldo Inicial, Saldo Final e Transacoes. Categorias: ${categories.join(',')}. Projetos: Pizza, Pastel, Baile, Encontro, Outros. Retorne APENAS o JSON puro: { "saldoInicial": 0.0, "saldoFinal": 0.0, "lista": [{ "data": "DD/MM", "item": "string", "valor": 0.0, "tipo": "E/S", "cat": "string", "proj": "string" }] }`;
+    const prompt = `Analise os extratos de ${startDate} a ${endDate}. Extraia TODAS as transações nesse intervalo. Ignore duplicatas. Categorias: ${categories.join(',')}. Projetos: Pizza, Pastel, Baile, Encontro, Outros. Retorne JSON: { "lista": [{ "data": "DD/MM", "item": "string", "valor": 0.0, "tipo": "E/S", "cat": "string", "proj": "string" }] }`;
 
     try {
       const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
       const result = await model.generateContent([prompt, inputText]);
-      const responseText = await result.response.text();
-      
-      // Limpeza de Markdown
-      const cleanJson = responseText.replace(/```json|```/g, "").trim();
-      const data = JSON.parse(cleanJson);
-      
+      const data = JSON.parse(result.response.text().replace(/```json|```/g, "").trim());
       setTransactions(data.lista);
-      setAccountBalances({ inicial: data.saldoInicial, final: data.saldoFinal });
-    } catch (e) {
-      alert("❌ ERRO NA ANÁLISE:\n" + e.message);
-    } finally { setIsProcessing(false); }
+    } catch (e) { alert("Erro na análise."); }
+    finally { setIsProcessing(false); }
   };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] font-sans pb-20 text-slate-900">
       <header className="bg-slate-900 text-white pt-12 pb-24 px-8 rounded-b-[3rem] shadow-2xl">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <div className="bg-blue-600 p-4 rounded-3xl shadow-lg"><Church size={32} /></div>
-            <div>
-              <h1 className="text-3xl font-black uppercase tracking-tighter italic leading-none">Tesouraria ECC</h1>
-              <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.3em] mt-2">N. Sra. das Dores • Guaxupé</p>
-            </div>
+        <div className="max-w-6xl mx-auto flex items-center gap-6">
+          <div className="bg-blue-600 p-4 rounded-3xl shadow-lg"><Church size={32} /></div>
+          <div>
+            <h1 className="text-3xl font-black uppercase tracking-tighter italic leading-none">Tesouraria ECC</h1>
+            <p className="text-blue-400 text-[10px] font-black uppercase tracking-[0.3em] mt-2">N. Sra. das Dores • Guaxupé</p>
           </div>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-8 -mt-12 space-y-8">
-        {/* Filtros */}
-        <section className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-xl grid grid-cols-1 md:grid-cols-3 gap-8">
+        <section className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-xl grid grid-cols-1 md:grid-cols-4 gap-6">
           <div className="space-y-3">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest"><Calendar size={14} className="inline mr-2"/> Período</p>
-            <div className="flex gap-2"><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full p-3 bg-slate-50 border rounded-xl text-xs font-bold" /><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full p-3 bg-slate-50 border rounded-xl text-xs font-bold" /></div>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Calendar size={14}/> Período</p>
+            <div className="flex gap-1"><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full p-2 bg-slate-50 border rounded-xl text-[10px] font-bold" /><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full p-2 bg-slate-50 border rounded-xl text-[10px] font-bold" /></div>
           </div>
+          
           <div className="space-y-3">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest"><Plus size={14} className="inline mr-2"/> Categoria</p>
-            <div className="flex gap-2"><input type="text" value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} placeholder="Nova..." className="w-full p-3 bg-slate-50 border rounded-xl text-xs" /><button onClick={() => { if(newCategoryName) setCategories([...categories, newCategoryName]); setNewCategoryName(''); }} className="bg-slate-900 text-white px-4 rounded-xl"><Plus size={18}/></button></div>
+            <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-2"><Wallet size={14}/> Saldo em {startDate || '...'}</p>
+            <input type="number" value={manualInitialBalance} onChange={e => setManualInitialBalance(e.target.value)} className="w-full p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs font-black" placeholder="R$ 0,00" />
           </div>
+
           <div className="space-y-3">
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest"><Paperclip size={14} className="inline mr-2"/> Extratos ({attachedFiles.length}/15)</p>
-            <button onClick={() => fileInputRef.current.click()} className="w-full p-3 bg-blue-50 text-blue-700 border border-blue-100 rounded-xl text-xs font-black uppercase tracking-tighter hover:bg-blue-100 transition-all">
-              {attachedFiles.length > 0 ? "Arquivos Prontos" : "Anexar Arquivos"}
-            </button>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Plus size={14}/> Nova Categoria</p>
+            <div className="flex gap-2"><input type="text" value={newCategoryName} onChange={e => setNewCategoryName(e.target.value)} className="w-full p-3 bg-slate-50 border rounded-xl text-xs" /><button onClick={() => { if(newCategoryName) setCategories([...categories, newCategoryName]); setNewCategoryName(''); }} className="bg-slate-900 text-white px-3 rounded-xl"><Plus size={16}/></button></div>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Paperclip size={14}/> Extratos ({attachedFiles.length})</p>
+            <button onClick={() => fileInputRef.current.click()} className="w-full p-3 bg-slate-100 text-slate-600 border rounded-xl text-[10px] font-black uppercase">Anexar Arquivos</button>
             <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept=".txt,.csv" multiple />
           </div>
         </section>
@@ -132,18 +129,18 @@ const App = () => {
         <section className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-xl">
           <textarea className="w-full h-32 p-6 bg-slate-50 rounded-[2rem] border-2 border-slate-100 mb-6 font-mono text-xs focus:outline-none resize-none" placeholder="O conteúdo dos arquivos aparecerá aqui..." value={inputText} readOnly />
           <button onClick={handleAnalyze} disabled={isProcessing} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-6 rounded-3xl shadow-xl flex items-center justify-center gap-4 transition-all disabled:opacity-50">
-            {isProcessing ? <Activity className="animate-spin" /> : "GERAR RELATÓRIO COMPLETO"}
+            {isProcessing ? <Activity className="animate-spin" /> : "PROCESSAR E CALCULAR SALDOS"}
           </button>
         </section>
 
         {transactions.length > 0 && (
           <div className="space-y-8 animate-in fade-in duration-500">
-            {/* Cards de Saldo */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center">
-              <div className="bg-slate-100 p-6 rounded-3xl border"><p className="text-[9px] font-black text-slate-500 uppercase mb-1">Inicial</p><p className="text-lg font-mono font-bold">R$ {accountBalances.inicial.toLocaleString('pt-BR')}</p></div>
-              <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100"><p className="text-[9px] font-black text-emerald-600 uppercase mb-1">Entradas (+)</p><p className="text-lg font-mono font-bold text-emerald-700">R$ {totals.entradas.toLocaleString('pt-BR')}</p></div>
-              <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100"><p className="text-[9px] font-black text-rose-600 uppercase mb-1">Saídas (-)</p><p className="text-lg font-mono font-bold text-rose-700">R$ {totals.saidas.toLocaleString('pt-BR')}</p></div>
-              <div className="bg-blue-600 p-6 rounded-3xl shadow-lg"><p className="text-[9px] font-black text-blue-100 uppercase mb-1">Final</p><p className="text-xl font-mono font-bold text-white">R$ {accountBalances.final.toLocaleString('pt-BR')}</p></div>
+            {/* Cards de Conferência Exata */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-center font-black">
+              <div className="bg-slate-100 p-6 rounded-3xl border"><p className="text-[9px] text-slate-500 uppercase mb-1">Saldo Inicial (Informado)</p><p className="text-lg font-mono">R$ {parseFloat(manualInitialBalance).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
+              <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100"><p className="text-[9px] text-emerald-600 uppercase mb-1">Soma Entradas (+)</p><p className="text-lg font-mono text-emerald-700">R$ {totals.entradas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
+              <div className="bg-rose-50 p-6 rounded-3xl border border-rose-100"><p className="text-[9px] text-rose-600 uppercase mb-1">Soma Saídas (-)</p><p className="text-lg font-mono text-rose-700">R$ {totals.saidas.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
+              <div className="bg-blue-600 p-6 rounded-3xl shadow-lg text-white"><p className="text-[9px] uppercase mb-1 opacity-80">Saldo Final Calculado</p><p className="text-xl font-mono">R$ {calculatedFinalBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p></div>
             </div>
 
             {/* Projetos */}
@@ -153,26 +150,25 @@ const App = () => {
                 return (
                   <div key={proj} className="bg-white p-5 rounded-3xl border shadow-sm">
                     <p className="text-[10px] font-black uppercase text-slate-400 mb-3">{proj}</p>
-                    <div className="space-y-1 text-[10px] font-bold">
-                      <div className="flex justify-between tracking-tighter"><span>ENT:</span><span className="text-emerald-600">+{pData.e.toFixed(2)}</span></div>
-                      <div className="flex justify-between tracking-tighter"><span>SAÍ:</span><span className="text-rose-600">-{pData.s.toFixed(2)}</span></div>
-                      <div className={`pt-2 border-t mt-1 flex justify-between font-black ${pData.r >= 0 ? 'text-blue-600' : 'text-rose-600'}`}><span>RES:</span><span>R$ {pData.r.toFixed(2)}</span></div>
+                    <div className="space-y-1 text-[10px] font-bold font-mono">
+                      <div className="flex justify-between"><span>ENT:</span><span className="text-emerald-600">+{pData.e.toFixed(2)}</span></div>
+                      <div className="flex justify-between"><span>SAÍ:</span><span className="text-rose-600">-{pData.s.toFixed(2)}</span></div>
+                      <div className={`pt-2 border-t mt-1 flex justify-between font-black ${pData.r >= 0 ? 'text-blue-600' : 'text-rose-600'}`}><span>RES:</span><span>{pData.r.toFixed(2)}</span></div>
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* Tabela com Exportação */}
             <div className="bg-white rounded-[2.5rem] border border-slate-200 overflow-hidden shadow-sm">
                <div className="px-8 py-5 border-b flex items-center justify-between">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lançamentos Detalhados</span>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Extrato de {startDate} a {endDate}</span>
                   <div className="flex gap-3">
-                    <button onClick={exportPDF} className="flex items-center gap-2 bg-rose-50 text-rose-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-rose-100 transition-all"><Download size={14}/> PDF</button>
-                    <button onClick={exportExcel} className="flex items-center gap-2 bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-emerald-100 transition-all"><FileSpreadsheet size={14}/> Excel</button>
+                    <button onClick={exportPDF} className="bg-rose-50 text-rose-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-rose-100 transition-all flex items-center gap-2"><Download size={14}/> PDF</button>
+                    <button onClick={exportExcel} className="bg-emerald-50 text-emerald-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase hover:bg-emerald-100 transition-all flex items-center gap-2"><FileSpreadsheet size={14}/> Excel</button>
                   </div>
                </div>
-               <table className="w-full text-left text-[11px]"><thead className="bg-slate-50 text-slate-400 uppercase font-black border-b"><tr><th className="px-6 py-5">Data</th><th className="px-6 py-5">Projeto</th><th className="px-6 py-5">Item</th><th className="px-6 py-5">Categoria</th><th className="px-6 py-5 text-right">Valor</th></tr></thead><tbody className="divide-y divide-slate-50">{transactions.map((t, i) => (<tr key={i} className="hover:bg-slate-50/50"><td className="px-6 py-5 font-mono text-slate-400">{t.data}</td><td className="px-6 py-5"><select value={t.proj} onChange={e => { const nl = [...transactions]; nl[i].proj = e.target.value; setTransactions(nl); }} className="w-full bg-slate-100 px-3 py-1 rounded-full font-black text-[9px] uppercase outline-none">{PROJETOS_PADRAO.map(p => <option key={p} value={p}>{p}</option>)}</select></td><td className="px-6 py-5 font-bold text-slate-700">{t.item}</td><td className="px-6 py-5"><select value={t.cat} onChange={e => { const nl = [...transactions]; nl[i].cat = e.target.value; setTransactions(nl); }} className="w-full bg-blue-50 text-blue-700 px-3 py-1 rounded-full font-black text-[9px] uppercase outline-none">{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></td><td className={`px-6 py-5 text-right font-mono font-black ${t.tipo === 'E' ? 'text-emerald-500' : 'text-rose-500'}`}>R$ {t.valor.toLocaleString('pt-BR')}</td></tr>))}</tbody></table>
+               <table className="w-full text-left text-[11px]"><thead className="bg-slate-50 text-slate-400 uppercase font-black border-b"><tr><th className="px-6 py-5">Data</th><th className="px-6 py-5">Projeto</th><th className="px-6 py-5">Item</th><th className="px-6 py-5">Categoria</th><th className="px-6 py-5 text-right">Valor</th></tr></thead><tbody className="divide-y divide-slate-50">{transactions.map((t, i) => (<tr key={i} className="hover:bg-slate-50/50"><td className="px-6 py-5 font-mono text-slate-400">{t.data}</td><td className="px-6 py-5"><select value={t.proj} onChange={e => { const nl = [...transactions]; nl[i].proj = e.target.value; setTransactions(nl); }} className="w-full bg-slate-100 px-2 py-1 rounded-full font-black text-[9px] uppercase outline-none">{PROJETOS_PADRAO.map(p => <option key={p} value={p}>{p}</option>)}</select></td><td className="px-6 py-5 font-bold text-slate-700">{t.item}</td><td className="px-6 py-5"><select value={t.cat} onChange={e => { const nl = [...transactions]; nl[i].cat = e.target.value; setTransactions(nl); }} className="w-full bg-blue-50 text-blue-700 px-2 py-1 rounded-full font-black text-[9px] uppercase outline-none">{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></td><td className={`px-6 py-5 text-right font-mono font-black ${t.tipo === 'E' ? 'text-emerald-500' : 'text-rose-500'}`}>R$ {t.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td></tr>))}</tbody></table>
             </div>
           </div>
         )}
